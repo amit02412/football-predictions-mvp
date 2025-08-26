@@ -1,0 +1,51 @@
+
+name: data-pipeline
+on:
+  schedule:
+    - cron: "0 * * * *"      # פעם בשעה (UTC)
+    - cron: "30 2 * * *"     # עדכון לילה מלא
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          sed -i "s/your_api_key_here/${{ secrets.APIFOOTBALL_KEY }}/" .env
+
+      - name: Fetch fixtures
+        run: python scripts/00_fetch_fixtures.py
+
+      - name: Fetch team statistics
+        run: python scripts/01_fetch_teamstats.py
+
+      - name: Fetch players
+        run: python scripts/02_fetch_players.py
+
+      - name: Fetch injuries
+        run: python scripts/03_fetch_injuries.py
+
+      - name: Build features
+        run: python scripts/10_build_features.py
+
+      - name: Predict
+        run: python scripts/20_predict_poisson.py
+
+      - name: Generate articles
+        run: python scripts/30_generate_articles.py
+
+      - name: Commit artifacts
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/ predictions/ web/data/preds.json || true
+          git commit -m "update data & predictions" || echo "no changes"
+          git push || true
